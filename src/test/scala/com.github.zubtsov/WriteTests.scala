@@ -72,4 +72,30 @@ class WriteTests extends SparkFunSuite {
     //10 folders * 10 files per folder = .... 15 partitions!
     Assertions.assertResult(15)(readTable.rdd.getNumPartitions)
   }
+
+  test("How to make one file per folder partition") {
+    val numberOfFolderPartitions = 10
+    val initialNumberOfFilePartitions = 5
+
+    val writer = spark.range(0, 1000, 1, initialNumberOfFilePartitions)
+      .withColumn("partition", col("id") % numberOfFolderPartitions)
+      .repartition(col("partition")) //key thing here
+      .write.mode("overwrite").format("csv")
+      .partitionBy("partition")
+
+    val tableName = "bucketed_table3"
+    writer.saveAsTable(tableName)
+
+    val groupedByPartition = new Directory(new File(s"$SparkWarehousePath/$tableName"))
+      .deepList(2).toSeq
+      .filter(p => p.name.endsWith(".csv"))
+      .groupBy(p => p.parent.name)
+
+    Assertions.assertResult(numberOfFolderPartitions)(groupedByPartition.size)
+    groupedByPartition.values.foreach(files => Assertions.assertResult(1)(files.size))
+
+    val readTable = spark.read.table(tableName)
+    //no surprises here
+    Assertions.assertResult(numberOfFolderPartitions)(readTable.rdd.getNumPartitions)
+  }
 }
