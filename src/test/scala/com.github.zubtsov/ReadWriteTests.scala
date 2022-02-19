@@ -7,7 +7,7 @@ import org.apache.spark.sql.functions._
 import java.io.File
 import scala.reflect.io.Directory
 
-class WriteTests extends SparkFunSuite {
+class ReadWriteTests extends SparkFunSuite {
   test("Can't use bucketing with save method") {
     val writer = spark.range(1000)
       .write.format("csv")
