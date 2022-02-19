@@ -20,7 +20,9 @@ class WriteTests extends SparkFunSuite {
     val numberOfFilesPerTask = 2 //number of tasks = number of partitions in memory
     val numberOfFilePartitions = 5
 
-    val writer = spark.range(0, 1000, 1, numberOfFilePartitions)
+    val df = spark.range(0, 1000, 1, numberOfFilePartitions)
+
+    val writer = df
       .write.mode("overwrite").format("csv")
       .bucketBy(numberOfFilesPerTask, "id")
 
@@ -34,6 +36,10 @@ class WriteTests extends SparkFunSuite {
 
     Assertions.assertResult(numberOfFilePartitions)(groupedByPartition.size)
     groupedByPartition.values.foreach(buckets => Assertions.assertResult(numberOfFilesPerTask)(buckets.size))
+
+    val readTable = spark.read.table(tableName)
+    //oops, bucketing affected the number of partitions, so we got 10 partitions instead of 5...
+    Assertions.assertResult(numberOfFilePartitions*numberOfFilesPerTask)(readTable.rdd.getNumPartitions)
   }
 
   test("Partitioning controls the number of folders and bucketing controls the number of files written in each task (per memory partition)") {
@@ -61,5 +67,9 @@ class WriteTests extends SparkFunSuite {
       Assertions.assertResult(numberOfFilePartitions)(groupedByFilePartition.size)
       groupedByFilePartition.values.foreach(buckets => Assertions.assertResult(numberOfFilesPerTask)(buckets.size))
     })
+
+    val readTable = spark.read.table(tableName)
+    //10 folders * 10 files per folder = .... 15 partitions!
+    Assertions.assertResult(15)(readTable.rdd.getNumPartitions)
   }
 }
