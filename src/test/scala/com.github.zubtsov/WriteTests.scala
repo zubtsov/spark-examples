@@ -16,7 +16,7 @@ class WriteTests extends SparkFunSuite {
       Assertions.assertThrows[org.apache.spark.sql.AnalysisException](writer.save("target/bucketed_table1"))
   }
 
-  test("Bucketing controls number of files written in one task (per memory partition)") {
+  test("Bucketing controls number of files written in each task (per memory partition)") {
     val numberOfFilesPerTask = 2 //number of tasks = number of partitions in memory
     val numberOfFilePartitions = 5
 
@@ -34,5 +34,32 @@ class WriteTests extends SparkFunSuite {
 
     Assertions.assertResult(numberOfFilePartitions)(groupedByPartition.size)
     groupedByPartition.values.foreach(buckets => Assertions.assertResult(numberOfFilesPerTask)(buckets.size))
+  }
+
+  test("Partitioning controls the number of folders and bucketing controls the number of files written in each task (per memory partition)") {
+    val numberOfFolderPartitions = 10
+    val numberOfFilesPerTask = 2 //number of tasks = number of partitions in memory
+    val numberOfFilePartitions = 5
+
+    val writer = spark.range(0, 1000, 1, numberOfFilePartitions)
+      .withColumn("partition", col("id") % numberOfFolderPartitions)
+      .write.mode("overwrite").format("csv")
+      .partitionBy("partition")
+      .bucketBy(numberOfFilesPerTask, "id")
+
+    val tableName = "bucketed_table2"
+    writer.saveAsTable(tableName)
+
+    val groupedByFolderPartition = new Directory(new File(s"$SparkWarehousePath/$tableName"))
+      .deepList(2).toSeq
+      .filter(p => p.name.endsWith(".csv"))
+      .groupBy(p => p.parent.name)
+
+    Assertions.assertResult(numberOfFolderPartitions)(groupedByFolderPartition.size)
+    groupedByFolderPartition.values.foreach(files => {
+      val groupedByFilePartition = files.groupBy(p => p.name.substring(0, 10))
+      Assertions.assertResult(numberOfFilePartitions)(groupedByFilePartition.size)
+      groupedByFilePartition.values.foreach(buckets => Assertions.assertResult(numberOfFilesPerTask)(buckets.size))
+    })
   }
 }
